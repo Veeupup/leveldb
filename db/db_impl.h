@@ -13,7 +13,8 @@
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/snapshot.h"
-#include "leveldb/db.h"
+// cmake install 之后就能在系统 include 中找到对应的头文件，现在放到了 some_install_headers 中便于查看
+#include "leveldb/db.h" 
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
