@@ -671,8 +671,8 @@ void DBImpl::MaybeScheduleCompaction() {
              !versions_->NeedsCompaction()) {
     // No work to be done
   } else {
-    background_compaction_scheduled_ = true;
-    env_->Schedule(&DBImpl::BGWork, this);
+    background_compaction_scheduled_ = true;// 设定标志位
+    env_->Schedule(&DBImpl::BGWork, this);  // 设定环境变量，可以在后台进行 compaction
   }
 }
 
@@ -1197,27 +1197,29 @@ Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
 }
 
+// 所有的写入操作都会经过 Write： Put、Delete
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
-  Writer w(&mutex_);
+  Writer w(&mutex_);  // 跟踪整个写入的生命周期
   w.batch = updates;
   w.sync = options.sync;
   w.done = false;
 
-  MutexLock l(&mutex_);
-  writers_.push_back(&w);
-  while (!w.done && &w != writers_.front()) {
+  MutexLock l(&mutex_); // 经典 RAII lock guard，更深也是对于 C++11 的 mutex 的封装
+  writers_.push_back(&w); // writers_ 是一个 deque，在 上面 lock 的保护下进入队列
+  while (!w.done && &w != writers_.front()) { // 排队，直到成为队列的头
     w.cv.Wait();
   }
-  if (w.done) {
+  if (w.done) { // 因为可能被很多个 writer 合并在一起写的，所以可能被修改为 true
     return w.status;
   }
 
   // May temporarily unlock and wait.
-  Status status = MakeRoomForWrite(updates == nullptr);
+  // 写入前的准备操作
+  Status status = MakeRoomForWrite(updates == nullptr); // 准备到适合写入的时机
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
-    WriteBatch* write_batch = BuildBatchGroup(&last_writer);
+    WriteBatch* write_batch = BuildBatchGroup(&last_writer);  // 选择当前写的策略，攒当前的批次，让很多的小的 put 一起写个大的
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
     last_sequence += WriteBatchInternal::Count(write_batch);
 
@@ -1225,6 +1227,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // during this phase since &w is currently responsible for logging
     // and protects against concurrent loggers and concurrent writes
     // into mem_.
+    // 开始写 log 和 memtable
     {
       mutex_.Unlock();
       status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
@@ -1235,7 +1238,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
           sync_error = true;
         }
       }
-      if (status.ok()) {
+      if (status.ok()) {  // log 写成功，可以写到 memtable
         status = WriteBatchInternal::InsertInto(write_batch, mem_);
       }
       mutex_.Lock();
@@ -1259,7 +1262,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
       ready->done = true;
       ready->cv.Signal();
     }
-    if (ready == last_writer) break;
+    if (ready == last_writer) break;  // 因为一次写了很多个 writer，所以需要将那些都一起写的 writer 的状态修改为 true
   }
 
   // Notify new head of write queue
@@ -1284,6 +1287,7 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
   // Allow the group to grow up to a maximum size, but if the
   // original write is small, limit the growth so we do not slow
   // down the small write too much.
+  // 根据时延和写入 batch 的大小来决定将哪些请求合成为一个 batch 来写入
   size_t max_size = 1 << 20;
   if (size <= (128 << 10)) {
     max_size = size + (128 << 10);
@@ -1296,6 +1300,9 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
     Writer* w = *iter;
     if (w->sync && !first->sync) {
       // Do not include a sync write into a batch handled by a non-sync write.
+      // 如果是一个 sync 的写，那么将会直接写，这样的话相当于很多 non-sync 的 write 搭了 sync 的便车，加快了提交的速度
+      // 如果用户的一个 Put 操作没有开启 sync，那么他可能认为这个请求可以较快地返回，
+      // 但是如果一个非 sync 操作被搭车到一个 sync 操作的批次中，会使这个非 sync 的操作的延时给拖高。
       break;
     }
 
@@ -1311,7 +1318,7 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
         // Switch to temporary batch instead of disturbing caller's batch
         result = tmp_batch_;
         assert(WriteBatchInternal::Count(result) == 0);
-        WriteBatchInternal::Append(result, first->batch);
+        WriteBatchInternal::Append(result, first->batch); // 将很多 batch 合成为一个 batch
       }
       WriteBatchInternal::Append(result, w->batch);
     }
@@ -1322,8 +1329,9 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
+// thread-safe 只有拥有锁而且在当前写队列的头部才能进行检查
 Status DBImpl::MakeRoomForWrite(bool force) {
-  mutex_.AssertHeld();
+  mutex_.AssertHeld();  // 再次检查是否持有锁
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;
@@ -1332,7 +1340,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay && versions_->NumLevelFiles(0) >=
+    } else if (allow_delay && versions_->NumLevelFiles(0) >=  // 检查当前 L0 层的 SSTable 是不是太多了
                                   config::kL0_SlowdownWritesTrigger) {
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
@@ -1341,8 +1349,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // this delay hands over some CPU to the compaction thread in
       // case it is sharing the same core as the writer.
       mutex_.Unlock();
-      env_->SleepForMicroseconds(1000);
-      allow_delay = false;  // Do not delay a single write more than once
+      env_->SleepForMicroseconds(1000); // 降低写入的速度，都慢上 1ms，给 compaction 留出一些时间
+      allow_delay = false;  // Do not delay a single write more than once，一个 writer 只会被降低速度一次
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
@@ -1354,7 +1362,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
-      // There are too many level-0 files.
+      // There are too many level-0 files. 如果降低速度之后仍然仍然发现 L0 层的文件太多，那么需要暂停一会，等待后台进程完成回收发出信号
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {
@@ -1373,10 +1381,10 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       logfile_ = lfile;
       logfile_number_ = new_log_number;
       log_ = new log::Writer(lfile);
-      imm_ = mem_;
+      imm_ = mem_;  // 设定为 不可修改的 memtable
       has_imm_.store(true, std::memory_order_release);
       mem_ = new MemTable(internal_comparator_);
-      mem_->Ref();
+      mem_->Ref();  // 引用计数
       force = false;  // Do not force another compaction if have room
       MaybeScheduleCompaction();
     }
@@ -1466,10 +1474,11 @@ void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
 
 // Default implementations of convenience methods that subclasses of DB
 // can call if they wish
+// 一个 key 的 put 也会被转换成一个 writebatch
 Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
   WriteBatch batch;
   batch.Put(key, value);
-  return Write(opt, &batch);
+  return Write(opt, &batch);  // 可以看到所有写入操作都调用了 Write 接口
 }
 
 Status DB::Delete(const WriteOptions& opt, const Slice& key) {

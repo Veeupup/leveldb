@@ -329,6 +329,7 @@ class PosixWritableFile final : public WritableFile {
     return status;
   }
 
+  // 最终实际的 write 系统调用写入磁盘
   Status WriteUnbuffered(const char* data, size_t size) {
     while (size > 0) {
       ssize_t write_result = ::write(fd_, data, size);

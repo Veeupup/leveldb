@@ -59,7 +59,7 @@ Status Writer::AddRecord(const Slice& slice) {
     const size_t avail = kBlockSize - block_offset_ - kHeaderSize;
     const size_t fragment_length = (left < avail) ? left : avail;
 
-    RecordType type;
+    RecordType type;  // 根据是否是头尾保存是 block 中的哪个部分
     const bool end = (left == fragment_length);
     if (begin && end) {
       type = kFullType;
@@ -79,6 +79,7 @@ Status Writer::AddRecord(const Slice& slice) {
   return s;
 }
 
+// 实际写 log，flush 刷新到磁盘
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr,
                                   size_t length) {
   assert(length <= 0xffff);  // Must fit in two bytes
