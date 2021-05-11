@@ -97,6 +97,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
+// 获得其 sst 的 iterator 开始找到对应的 key 
 Status TableCache::Get(const ReadOptions& options, uint64_t file_number,
                        uint64_t file_size, const Slice& k, void* arg,
                        void (*handle_result)(void*, const Slice&,

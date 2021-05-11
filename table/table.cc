@@ -211,12 +211,13 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
+// 对于某个具体的 table，找某个 user key 的数据，同时检测是否有效
 Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
                           void (*handle_result)(void*, const Slice&,
                                                 const Slice&)) {
   Status s;
-  Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-  iiter->Seek(k);
+  Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator); // index block 代表的是所有 key 的 index metadata
+  iiter->Seek(k); // seek 找对应的 val，这里对应的是 block.cc 中的 Block::Iter，在 index block 中二分查找对应的数据
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
     FilterBlockReader* filter = rep_->filter;
@@ -226,7 +227,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
       // Not found
     } else {
       Iterator* block_iter = BlockReader(this, options, iiter->value());
-      block_iter->Seek(k);
+      block_iter->Seek(k);  // key 找到了，找对应的 value
       if (block_iter->Valid()) {
         (*handle_result)(arg, block_iter->key(), block_iter->value());
       }

@@ -15,6 +15,7 @@ namespace leveldb {
 struct BlockContents;
 class Comparator;
 
+// 关于各种 Block 的介绍可以参照 https://leveldb-handbook.readthedocs.io/zh/latest/sstable.html
 class Block {
  public:
   // Initialize the block with the specified contents.

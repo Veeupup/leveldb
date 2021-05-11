@@ -1112,12 +1112,17 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+// 找到 key 相同而且 SequenceNumber 最大（最新）的数据
+// 先找 memtable，再找 immutable memtable，再找 level0，和 leveln 的数据
+// level0 逆序之后需要遍历找，其余层的数据先根据 larges key 找到可能存在 level 中可能存在的 file
+// 再拿到 file 对应 TableCache 的 Iterator 进去来二分查找 datablock 中的数据
+// 找不到就继续往下一层继续查找
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
   MutexLock l(&mutex_);
   SequenceNumber snapshot;
-  if (options.snapshot != nullptr) {
+  if (options.snapshot != nullptr) {  // 确定好 SequenceNumber，作为快照查找的上限
     snapshot =
         static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
   } else {
@@ -1144,7 +1149,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options, lkey, value, &stats); // 都找不大，得去 level file 中找
       have_stat_update = true;
     }
     mutex_.Lock();

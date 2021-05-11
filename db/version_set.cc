@@ -84,6 +84,7 @@ Version::~Version() {
   }
 }
 
+// 根据文件的 metadata 来二分查找，找到第一个大于 key 的 level file，如果不存在那么就会出现 right == files.size()
 int FindFile(const InternalKeyComparator& icmp,
              const std::vector<FileMetaData*>& files, const Slice& key) {
   uint32_t left = 0;
@@ -278,24 +279,25 @@ static bool NewestFirst(FileMetaData* a, FileMetaData* b) {
   return a->number > b->number;
 }
 
+// 开始在 sstable 中查找对应的 kv
 void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                                  bool (*func)(void*, int, FileMetaData*)) {
   const Comparator* ucmp = vset_->icmp_.user_comparator();
 
   // Search level-0 in order from newest to oldest.
   std::vector<FileMetaData*> tmp;
-  tmp.reserve(files_[0].size());
+  tmp.reserve(files_[0].size());  // 因为 level0 中的 sstable 后面的比前面的更新，所以 reverse，从后往前找
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
-      tmp.push_back(f);
+      tmp.push_back(f); // 有可能在这个区间内，保留可能的区间
     }
   }
   if (!tmp.empty()) {
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
     for (uint32_t i = 0; i < tmp.size(); i++) {
-      if (!(*func)(arg, 0, tmp[i])) {
+      if (!(*func)(arg, 0, tmp[i])) { // func 这里传进来的是 Match 函数，也就是说找到匹配的那个函数
         return;
       }
     }
@@ -303,12 +305,14 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
 
   // Search other levels.
   for (int level = 1; level < config::kNumLevels; level++) {
-    size_t num_files = files_[level].size();
+    size_t num_files = files_[level].size();  // 每一层有很多 level file，sst，根据二分找到可能的 sst
     if (num_files == 0) continue;
 
     // Binary search to find earliest index whose largest key >= internal_key.
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
+      // 这个时候当前 level[index] 的 SST 的 largest key 大于当前 key，然后判断是否在当前的 file 中
+      // 如果 user key 小于这个 sst 的 smallest key，那么肯定就不在当前的区间，说明没找到，接着往下一层去找
       FileMetaData* f = files_[level][index];
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
         // All of "f" is past any data for user_key
@@ -321,6 +325,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   }
 }
 
+// 在 level file 中查找 key 对应的 value
 Status Version::Get(const ReadOptions& options, const LookupKey& k,
                     std::string* value, GetStats* stats) {
   stats->seek_file = nullptr;
@@ -344,6 +349,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       if (state->stats->seek_file == nullptr &&
           state->last_file_read != nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
+        // QUES 什么意思，什么是本次 read 有多个 seek
         state->stats->seek_file = state->last_file_read;
         state->stats->seek_file_level = state->last_file_read_level;
       }
@@ -351,6 +357,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       state->last_file_read = f;
       state->last_file_read_level = level;
 
+      // 如果有可能是当前的 sst，那么去当前的 sst 中去找
       state->s = state->vset->table_cache_->Get(*state->options, f->number,
                                                 f->file_size, state->ikey,
                                                 &state->saver, SaveValue);

@@ -187,10 +187,12 @@ class Block::Iter : public Iterator {
     while (left < right) {
       uint32_t mid = (left + right + 1) / 2;
       uint32_t region_offset = GetRestartPoint(mid);
-      uint32_t shared, non_shared, value_length;
+       // 因为 data block 会使用 共享前缀来压缩数据，所以需要计算出 restartpoint
+       // 需要组合算出实际的 key，来和要对比的 user key 比较
+      uint32_t shared, non_shared, value_length; 
       const char* key_ptr =
           DecodeEntry(data_ + region_offset, data_ + restarts_, &shared,
-                      &non_shared, &value_length);
+                      &non_shared, &value_length);  
       if (key_ptr == nullptr || (shared != 0)) {
         CorruptionError();
         return;
