@@ -3,15 +3,15 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 //
 // WriteBatch::rep_ :=
-//    sequence: fixed64
-//    count: fixed32
+//    sequence: fixed64  (8 bytes)
+//    count: fixed32     (4 bytes)
 //    data: record[count]
 // record :=
 //    kTypeValue varstring varstring         |
 //    kTypeDeletion varstring
 // varstring :=
-//    len: varint32
-//    data: uint8[len]
+//    len: varint32     (4 bytes)
+//    data: uint8[len]  
 
 #include "leveldb/write_batch.h"
 

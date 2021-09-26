@@ -27,6 +27,7 @@ uint32_t Hash(const char* data, size_t n, uint32_t seed) {
   uint32_t h = seed ^ (n * m);
 
   // Pick up four bytes at a time
+  // 4字节读取加速
   while (data + 4 <= limit) {
     uint32_t w = DecodeFixed32(data);
     data += 4;
@@ -39,6 +40,7 @@ uint32_t Hash(const char* data, size_t n, uint32_t seed) {
   switch (limit - data) {
     case 3:
       h += static_cast<uint8_t>(data[2]) << 16;
+      // 仅仅作为一种“我确定我这里想跳过”的标志
       FALLTHROUGH_INTENDED;
     case 2:
       h += static_cast<uint8_t>(data[1]) << 8;

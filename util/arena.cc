@@ -17,6 +17,9 @@ Arena::~Arena() {
   }
 }
 
+// 只有当前 block 分配空间不够了才会走到这个函数
+// 大于 1KB 就直接分配一个新的 block
+// 小于 1KB 的话，分配一个新的 block，并从新的 block 开始分配，当前 block 里面的空间就浪费掉
 char* Arena::AllocateFallback(size_t bytes) {
   if (bytes > kBlockSize / 4) {
     // Object is more than a quarter of our block size.  Allocate it separately

@@ -131,6 +131,13 @@ class InternalFilterPolicy : public FilterPolicy {
 // Modules in this directory should keep internal keys wrapped inside
 // the following class instead of plain strings so that we do not
 // incorrectly use string comparisons instead of an InternalKeyComparator.
+// +-----------------------------------------------------+
+// |        +------------------------------------------+ |
+// |        |               Internal Key               | |
+// | Length +------------------------+----------+------+ |
+// |        |        User Key        | Sequence7 | Type1||
+// |        +------------------------+----------+------+ |
+// +-----------------------------------------------------+
 class InternalKey {
  private:
   std::string rep_;
@@ -193,15 +200,17 @@ class LookupKey {
   ~LookupKey();
 
   // Return a key suitable for lookup in a MemTable.
+  // memtable 查找使用
   Slice memtable_key() const { return Slice(start_, end_ - start_); }
 
   // Return an internal key (suitable for passing to an internal iterator)
+  // SST 查找使用
   Slice internal_key() const { return Slice(kstart_, end_ - kstart_); }
 
   // Return the user key
   Slice user_key() const { return Slice(kstart_, end_ - kstart_ - 8); }
 
- private:
+private:
   // We construct a char array of the form:
   //    klength  varint32               <-- start_
   //    userkey  char[klength]          <-- kstart_

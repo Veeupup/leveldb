@@ -243,6 +243,7 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
     // Check crc
     if (checksum_) {
       uint32_t expected_crc = crc32c::Unmask(DecodeFixed32(header));
+      // 计算实际的 crc 校验的时候 type 也算进去了
       uint32_t actual_crc = crc32c::Value(header + 6, 1 + length);
       if (actual_crc != expected_crc) {
         // Drop the rest of the buffer since "length" itself may have

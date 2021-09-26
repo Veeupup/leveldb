@@ -185,6 +185,7 @@ Status DBImpl::NewDB() {
   new_db.SetNextFile(2);
   new_db.SetLastSequence(0);
 
+  // 创建 Manifest 文件表明这个db存在
   const std::string manifest = DescriptorFileName(dbname_, 1);
   WritableFile* file;
   Status s = env_->NewWritableFile(manifest, &file);
@@ -1336,7 +1337,7 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 // REQUIRES: this thread is currently at the front of the writer queue
 // thread-safe 只有拥有锁而且在当前写队列的头部才能进行检查
 Status DBImpl::MakeRoomForWrite(bool force) {
-  mutex_.AssertHeld();  // 再次检查是否持有锁
+  mutex_.AssertHeld();
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;

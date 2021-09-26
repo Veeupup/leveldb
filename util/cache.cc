@@ -37,16 +37,19 @@ namespace {
 // Elements are moved between these lists by the Ref() and Unref() methods,
 // when they detect an element in the cache acquiring or losing its only
 // external reference.
+// LRU Cache 的实现依赖双向循环链表和哈希表
+// 双向循环链表 维护 Recently 属性，哈希表维护 Used 属性
 
 // An entry is a variable length heap-allocated structure.  Entries
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
   void* value;
   void (*deleter)(const Slice&, void* value);
+  // 开放式哈希表中同一个桶下存储链表时使用的指针
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
-  size_t charge;  // TODO(opt): Only allow uint32_t?
+  size_t charge;  // TODO(opt): Only allow uint32_t? 当前节点的缓存费用，比如一个字符串的费用可能就是它的长度
   size_t key_length;
   bool in_cache;     // Whether entry is in the cache.
   uint32_t refs;     // References, including cache reference, if present.
@@ -67,6 +70,7 @@ struct LRUHandle {
 // table implementations in some of the compiler/runtime combinations
 // we have tested.  E.g., readrandom speeds up by ~5% over the g++
 // 4.4.3's builtin hashtable.
+// Hash table 开链法 hash 相同的放在同一个桶里
 class HandleTable {
  public:
   HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
@@ -186,6 +190,7 @@ class LRUCache {
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
   // Entries have refs==1 and in_cache==true.
+  // 链表头部是最老的，尾部是最新的节点，删除的时候直接删除头部的节点就行
   LRUHandle lru_ GUARDED_BY(mutex_);
 
   // Dummy head of in-use list.
@@ -232,6 +237,7 @@ void LRUCache::Unref(LRUHandle* e) {
     free(e);
   } else if (e->in_cache && e->refs == 1) {
     // No longer in use; move to lru_ list.
+    // 内部自己使用也有一个引用计数
     LRU_Remove(e);
     LRU_Append(&lru_, e);
   }
@@ -346,6 +352,7 @@ class ShardedLRUCache : public Cache {
     return Hash(s.data(), s.size(), 0);
   }
 
+  // 取得 高 4 位置作为 shard 的区分
   static uint32_t Shard(uint32_t hash) { return hash >> (32 - kNumShardBits); }
 
  public:

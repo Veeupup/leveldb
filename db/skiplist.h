@@ -12,7 +12,7 @@
 // Reads require a guarantee that the SkipList will not be destroyed
 // while the read is in progress.  Apart from that, reads progress
 // without any internal locking or synchronization.
-//
+// Reader lock-free 因为从不会删除 node，但是写需要额外的同步保证
 // Invariants:
 //
 // (1) Allocated nodes are never deleted until the SkipList is
@@ -241,6 +241,7 @@ inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
 template <typename Key, class Comparator>
 int SkipList<Key, Comparator>::RandomHeight() {
   // Increase height with probability 1 in kBranching
+  // 每次都有 1/4 概率继续向上增加高度
   static const unsigned int kBranching = 4;
   int height = 1;
   while (height < kMaxHeight && ((rnd_.Next() % kBranching) == 0)) {
@@ -257,6 +258,10 @@ bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
   return (n != nullptr) && (compare_(n->key, key) < 0);
 }
 
+// 主要是看懂这个函数，每次都从 head_ 的最高层开始找
+// 比较当前 node 的 next 和要找的 key 的大小
+// 如果当前的 key 大于当前 node 的 next，那么一定在 next 之后
+// 如果当前的 key 小于当前 node 的 next，那么就降低 level 在下一层找，更加精细的找
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node*
 SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key,
@@ -345,6 +350,7 @@ void SkipList<Key, Comparator>::Insert(const Key& key) {
 
   int height = RandomHeight();
   if (height > GetMaxHeight()) {
+    // 如果高度超过当前最高的高度，那么就将第一列的链表修改一下指向即可
     for (int i = GetMaxHeight(); i < height; i++) {
       prev[i] = head_;
     }
@@ -363,6 +369,7 @@ void SkipList<Key, Comparator>::Insert(const Key& key) {
     // NoBarrier_SetNext() suffices since we will add a barrier when
     // we publish a pointer to "x" in prev[i].
     x->NoBarrier_SetNext(i, prev[i]->NoBarrier_Next(i));
+    // 之前记录的 prev 节点，这里如果高度超过，那么就改下 next 指针所指的节点
     prev[i]->SetNext(i, x);
   }
 }
