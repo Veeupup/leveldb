@@ -220,6 +220,7 @@ static Iterator* GetFileIterator(void* arg, const ReadOptions& options,
   }
 }
 
+// 根据 LevelFileNumIterator 可以得到每个 level 的文件的 iterator
 Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,
                                             int level) const {
   return NewTwoLevelIterator(
@@ -309,6 +310,7 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
     if (num_files == 0) continue;
 
     // Binary search to find earliest index whose largest key >= internal_key.
+    // 每个 level 内部使用二分，遍历每个 level
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
     if (index < num_files) {
       // 这个时候当前 level[index] 的 SST 的 largest key 大于当前 key，然后判断是否在当前的 file 中
@@ -349,7 +351,6 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       if (state->stats->seek_file == nullptr &&
           state->last_file_read != nullptr) {
         // We have had more than one seek for this read.  Charge the 1st file.
-        // QUES 什么意思，什么是本次 read 有多个 seek
         state->stats->seek_file = state->last_file_read;
         state->stats->seek_file_level = state->last_file_read_level;
       }
@@ -928,6 +929,7 @@ Status VersionSet::Recover(bool* save_manifest) {
       }
 
       if (s.ok()) {
+        // 挨个读取出来并且 Apply
         builder.Apply(&edit);
       }
 

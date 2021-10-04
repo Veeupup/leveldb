@@ -36,6 +36,7 @@ namespace {
 // - LRU:  contains the items not currently referenced by clients, in LRU order
 // Elements are moved between these lists by the Ref() and Unref() methods,
 // when they detect an element in the cache acquiring or losing its only
+// 注意这里的 cache 里面存放了两部分的内容，分别是 in-use 不能被换出的数据以及可以被 LRU 策略换出的数据
 // external reference.
 // LRU Cache 的实现依赖双向循环链表和哈希表
 // 双向循环链表 维护 Recently 属性，哈希表维护 Used 属性
